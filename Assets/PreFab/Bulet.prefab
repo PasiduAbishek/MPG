@@ -19,7 +19,7 @@ GameObject:
   - component: {fileID: -6714853422943986970}
   - component: {fileID: 1839684073151662769}
   m_Layer: 0
-  m_Name: Sphere
+  m_Name: Bulet
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
