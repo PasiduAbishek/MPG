@@ -100,6 +100,8 @@ public class PlayerController : NetworkBehaviour
 		// 5. වෙඩි තැබීම
 		if (Input.GetButton("Fire1")&&Time.time>=nextfireTime)
 		{
+			// ---> මෙන්න මේ පේළිය අනිවාර්යයෙන්ම එකතු කරන්න <---
+			nextfireTime = Time.time + fireRate;
 			if (bulletPrefab != null && shootPoint != null)
 			{
 				ShootServerRpc();

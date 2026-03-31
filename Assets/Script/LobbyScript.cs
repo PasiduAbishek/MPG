@@ -6,22 +6,39 @@ using Unity.Services.Relay.Models;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using TMPro;
+using UnityEngine.UI;
 
-public class TestLobby : MonoBehaviour
+public class TestLobby : NetworkBehaviour
 {
+	[Header("මෙනු කොටස් (Panels)")]
+	public GameObject mainMenuPanel;
+	public GameObject roomPanel;
+
+	[Header("UI ලින්ක්")]
 	public TMP_InputField joinCodeInput;
 	public TextMeshProUGUI codeDisplayText;
+	public Button startGameButton;
+	public Button readyButton;
+	public TMP_InputField playerNameInput;
+
+	// Ready වුණු ගණන හැමෝටම පේන විදිහට හදමු
+	public NetworkVariable<int> playersReadyCount = new NetworkVariable<int>(0);
 
 	async void Start()
 	{
-		// මේ Script එක තියෙන Object එක Scene එක මාරු වෙද්දී මකන්න එපා කියලා කියනවා
-		DontDestroyOnLoad(gameObject);
-		// Text එක තියෙන Canvas එකත් මකන්න එපා කියන්න ඕනේ (පල්ලෙහා පියවර බලන්න)
-		if (codeDisplayText != null) DontDestroyOnLoad(codeDisplayText.canvas.gameObject);
-
 		await UnityServices.InitializeAsync();
 		await AuthenticationService.Instance.SignInAnonymouslyAsync();
-		Debug.Log("Unity සර්වර් එකට ලොග් වුණා!");
+
+		roomPanel.SetActive(false);
+		mainMenuPanel.SetActive(true);
+	}
+
+	public override void OnNetworkSpawn()
+	{
+		// Ready වුණු ගණන වෙනස් වෙන හැම වෙලාවකම මේක වැඩ කරනවා
+		playersReadyCount.OnValueChanged += (oldVal, newVal) => {
+			CheckIfEveryoneIsReady();
+		};
 	}
 
 	public async void CreateMatch()
@@ -30,39 +47,23 @@ public class TestLobby : MonoBehaviour
 		{
 			Allocation allocation = await RelayService.Instance.CreateAllocationAsync(4);
 			string joinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
-
-			// කෝඩ් එක පෙන්වනවා
 			codeDisplayText.text = "Join Code: " + joinCode;
 
-			// --- මෙන්න මේ පේළිය අලුතෙන් එකතු කරන්න ---
-			// මේකෙන් කරන්නේ "Join Code" එක නැති අනිත් හැම UI එකක්ම (Buttons, InputFields) හංගන එකයි
-			HideMenuUI();
-
 			NetworkManager.Singleton.GetComponent<UnityTransport>().SetHostRelayData(
-				allocation.RelayServer.IpV4,
-				(ushort)allocation.RelayServer.Port,
-				allocation.AllocationIdBytes,
-				allocation.Key,
-				allocation.ConnectionData
+				allocation.RelayServer.IpV4, (ushort)allocation.RelayServer.Port,
+				allocation.AllocationIdBytes, allocation.Key, allocation.ConnectionData
 			);
 
 			if (NetworkManager.Singleton.StartHost())
 			{
-				NetworkManager.Singleton.SceneManager.LoadScene("GameArena", UnityEngine.SceneManagement.LoadSceneMode.Single);
+				mainMenuPanel.SetActive(false);
+				roomPanel.SetActive(true);
+				startGameButton.gameObject.SetActive(true);
+				readyButton.gameObject.SetActive(false);
+				startGameButton.interactable = false; // මුලින්ම ඕෆ් කරලා තියෙන්නේ
 			}
 		}
 		catch (System.Exception e) { Debug.Log(e); }
-	}
-
-	// අලුත් Function එකක් ලියමු UI හංගන්න
-	void HideMenuUI()
-	{
-		// Canvas එක ඇතුළේ තියෙන පරණ බොත්තම් සහ InputField එක හොයාගෙන හංගනවා
-		joinCodeInput.gameObject.SetActive(false);
-
-		// Create Match සහ Join Match බොත්තම් තියෙන "Panel" එකක් හෝ පේරන්ට් කෙනෙක් ඉන්නවා නම් එයාව හංගන්න
-		// උදාහරණයක් ලෙස:
-		// GameObject.Find("CreateMatchButton").SetActive(false);
 	}
 
 	public async void JoinMatch()
@@ -73,22 +74,66 @@ public class TestLobby : MonoBehaviour
 			JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(code);
 
 			NetworkManager.Singleton.GetComponent<UnityTransport>().SetClientRelayData(
-				joinAllocation.RelayServer.IpV4,
-				(ushort)joinAllocation.RelayServer.Port,
-				joinAllocation.AllocationIdBytes,
-				joinAllocation.Key,
-				joinAllocation.ConnectionData,
-				joinAllocation.HostConnectionData
+				joinAllocation.RelayServer.IpV4, (ushort)joinAllocation.RelayServer.Port,
+				joinAllocation.AllocationIdBytes, joinAllocation.Key,
+				joinAllocation.ConnectionData, joinAllocation.HostConnectionData
 			);
 
-			NetworkManager.Singleton.StartClient();
-
-			// Client ජොයින් වුණාම Join Code එක පෙන්වන එක නවත්වන්න පුළුවන්
-			codeDisplayText.text = "";
+			if (NetworkManager.Singleton.StartClient())
+			{
+				mainMenuPanel.SetActive(false);
+				roomPanel.SetActive(true);
+				startGameButton.gameObject.SetActive(false);
+				readyButton.gameObject.SetActive(true);
+			}
 		}
-		catch (System.Exception e)
+		catch (System.Exception e) { Debug.Log(e); }
+	}
+
+	public void OnReadyButtonClicked()
+	{
+		SavePlayerDetails();
+		readyButton.interactable = false;
+		SendReadyServerRpc();
+	}
+
+	[ServerRpc(RequireOwnership = false)]
+	private void SendReadyServerRpc()
+	{
+		playersReadyCount.Value++;
+	}
+
+	// හැමෝම රෙඩි ද කියලා බලන කොටස
+	private void CheckIfEveryoneIsReady()
+	{
+		if (!IsServer) return; // සර්වර් එක විතරයි මේක තීරණය කරන්නේ
+
+		// ජොයින් වෙලා ඉන්න යාළුවෝ ගණන (Host නැතුව)
+		int connectedClients = NetworkManager.Singleton.ConnectedClientsList.Count - 1;
+
+		// යාළුවෝ ඉන්නවා නම් සහ ඒ හැමෝම රෙඩි නම් විතරක් Start Game බටන් එක දෙනවා
+		if (connectedClients > 0 && playersReadyCount.Value >= connectedClients)
 		{
-			Debug.Log("Join වෙන්න බැරි වුණා: " + e);
+			startGameButton.interactable = true;
+		}
+		else
+		{
+			startGameButton.interactable = false;
+		}
+	}
+
+	public void SavePlayerDetails()
+	{
+		string name = (playerNameInput != null && playerNameInput.text != "") ? playerNameInput.text : "Player" + Random.Range(10, 99);
+		PlayerPrefs.SetString("PlayerName", name);
+	}
+
+	public void StartGameScene()
+	{
+		if (IsServer && startGameButton.interactable)
+		{
+			SavePlayerDetails();
+			NetworkManager.Singleton.SceneManager.LoadScene("GameArena", UnityEngine.SceneManagement.LoadSceneMode.Single);
 		}
 	}
 }

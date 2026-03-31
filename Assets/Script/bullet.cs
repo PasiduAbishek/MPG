@@ -1,16 +1,27 @@
 ﻿using UnityEngine;
 using Unity.Netcode;
+using System.Collections; // Coroutine පාවිච්චි කරන්න මේක ඕනේ
 
 public class BulletScript : NetworkBehaviour
 {
-	public float lifeTime = 5f; // කිසිම දෙයක නොවැදුණොත් තත්පර 5කින් විනාශ වේ
+	public float lifeTime = 5f;
 
-	void Start()
+	public override void OnNetworkSpawn()
 	{
 		if (IsServer)
 		{
-			// සර්වර් එකේදී විතරක් කාලය අවසන් වූ පසු විනාශ කරන්න
-			Destroy(gameObject, lifeTime);
+			// සර්වර් එකේදී විතරක් කාලය මනින්න පටන් ගන්නවා
+			StartCoroutine(DestroyAfterTime());
+		}
+	}
+
+	private IEnumerator DestroyAfterTime()
+	{
+		yield return new WaitForSeconds(lifeTime);
+		// තත්පර 5කට පස්සේ බෝලේ තාමත් තියෙනවා නම් නෙට්වර්ක් එකෙන් අයින් කරනවා
+		if (IsSpawned)
+		{
+			GetComponent<NetworkObject>().Despawn();
 		}
 	}
 
@@ -18,20 +29,15 @@ public class BulletScript : NetworkBehaviour
 	{
 		if (!IsServer || !IsSpawned) return;
 
-		// 1. ප්ලේයර් කෙනෙක්ගේ වැදුණොත් විතරක් ඉක්මනින් විනාශ කරනවා
 		if (collision.gameObject.CompareTag("Player"))
 		{
 			if (collision.gameObject.TryGetComponent(out HealthScript health))
 			{
-				health.TakeDamage(10); // ඩැමේජ් එක 10ක් දෙනවා
+				health.TakeDamage(10);
 			}
 
 			// ප්ලේයර්ගේ වැදුණු ගමන් බෝලය අයින් කරනවා
-			NetworkObject.Despawn();
+			GetComponent<NetworkObject>().Despawn();
 		}
-
-		// 2. බිම (Floor) වැදුණොත් බෝලය එතනම නතර වෙලා තියෙන්න ඕනේ නම්, 
-		// Despawn() එක මෙතන ලියන්න එපා. 
-		// එතකොට උඩ Start එකේ තියෙන කාලය ඉවර වුණාම තමයි ඒක මැකෙන්නේ.
 	}
 }
