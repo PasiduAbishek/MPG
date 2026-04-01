@@ -7,10 +7,12 @@ public class NetworkHandler : MonoBehaviour
 {
 	public GameObject playerPrefab;
 
+
 	private void Start()
 	{
 		// 1. සර්වර් එක Start වුණාට පස්සේ විතරක් ඉතුරු ටික කරන්න කියලා කියනවා
 		NetworkManager.Singleton.OnServerStarted += OnServerStarted;
+
 	}
 
 	private void OnServerStarted()
@@ -66,4 +68,5 @@ public class NetworkHandler : MonoBehaviour
 		// ප්ලේයර්ව නෙට්වර්ක් එකට සම්බන්ධ කරනවා (මෙතනදී තමයි අර "None" කරපු එකේ අඩුව පුරවන්නේ)
 		playerInstance.GetComponent<NetworkObject>().SpawnAsPlayerObject(clientId);
 	}
+
 }
